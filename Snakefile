@@ -49,9 +49,9 @@ rule minimap2_align:
     params:
         preset = lambda wildcards: minimap2_presets[wildcards.read],
         reference = lambda wildcards: df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Reference').item()
-    threads: lambda wildcards: 24
+    threads: lambda wildcards: 16
     resources:
-        mem_mb = 4000,
+        mem_mb = lambda wildcards: 5000 if wildcards.read == 'PB' else 7000,
         walltime = '24h',
         scratch = '50G'
     shell:
