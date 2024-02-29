@@ -1,7 +1,7 @@
 from pathlib import PurePath
 import polars as pl
 
-workflow._singularity_args += f' -B /nfs/nas12.ethz.ch/fs1201/green_groups_tg_public/data -B $TMPDIR -B /cluster/work/pausch/inputs'
+#workflow._singularity_args += f' -B /nfs/nas12.ethz.ch/fs1201/green_groups_tg_public/data -B $TMPDIR -B /cluster/work/pausch/inputs -B /cluster/spack/apps/'
 
 minimap2_presets = {'PB':'map-hifi','ONT':'map-ont'}
 
@@ -41,14 +41,16 @@ rule minimap2_index:
 
 rule minimap2_align:
     input:
-        reference = 'asset/genome_compact/ARS_UCD_v2.0.fa.gz', ######DOES NOT ALWAYS WORK
+        reference = 'asset/genome_compact/ARS_UCD_v2.0.fa.gz',
         bam = lambda wildcards: df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('FASTQ_LR_Dir').item(),
         index = rules.minimap2_index.output
     output:
+        #multiext('alignments/{sample}.{read}.mm2.bam','','.csi')
         multiext('alignments/{sample}.{read}.mm2.cram','','.crai')
     params:
         preset = lambda wildcards: minimap2_presets[wildcards.read],
-        reference = lambda wildcards: df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Reference').item()
+        decoding_reference = lambda wildcards: df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Reference').item(),
+        cram_fmt = lambda wildcards, input, output: f'--reference {input.reference} --output-fmt cram,version=3.1' if PurePath(output[0]).suffix == '.cram' else ''
     threads: lambda wildcards: 16
     resources:
         mem_mb = lambda wildcards: 5000 if wildcards.read == 'PB' else 7000,
@@ -56,9 +58,9 @@ rule minimap2_align:
         scratch = '50G'
     shell:
         '''
-        samtools fastq --reference {params.reference} --threads {threads} {input.bam} |\
-        minimap2 -t {threads} -ax {params.preset} -R '@RG\\tPL:{wildcards.read}\\tID:{wildcards.sample}\\tSM:{wildcards.sample}' -y -Y {input.index} - |\
-        samtools sort -  --reference {input.reference} --output-fmt cram,version=3.1 -m 3000M -@ {threads} -T $TMPDIR -o {output[0]} --write-index
+        samtools fastq --reference {params.decoding_reference} --threads {threads} {input.bam} |\
+        minimap2 -t {threads} -ax {params.preset} -R '@RG\\tPL:{wildcards.read}\\tID:{wildcards.sample}\\tSM:{wildcards.sample}' --MD {input.index} - |\
+        samtools sort - {params.cram_fmt} -m 3000M -@ {threads} -T $TMPDIR -o {output[0]} --write-index
         '''
 
 rule cramino_stats:
@@ -69,7 +71,8 @@ rule cramino_stats:
         'alignments/{sample}.{read}.mm2.stats'
     threads: 4
     resources:
-        mem_mb = 5000
+        mem_mb = 2500,
+        walltime = '4h'
     shell:
         '''
         cramino --reference {input.reference} -t {threads} -s {wildcards.sample}_{wildcards.read} {input.bam[0]} > {output}
@@ -87,11 +90,11 @@ rule clair3:
     params:
         model = lambda wildcards: {'Sequel':'hifi_sequel2','Revio':'hifi_revio','r9_g3':'r941_prom_hac_g360+g422','r9_g4':'r941_prom_hac_g360+g422'}[df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Kit').item()],
         _dir = lambda wildcards, output: PurePath(output[0]).parent
-    container: '/cluster/work/pausch/alex/software/images/clair3_v1.0.5.sif'
     threads: 12
     resources:
         mem_mb = 3000,
         walltime = '24h'
+    conda: 'clair3'
     shell:
         '''
         run_clair3.sh --bam_fn={input.bam[0]} \
