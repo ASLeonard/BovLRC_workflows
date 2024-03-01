@@ -102,7 +102,7 @@ rule clair3:
                       --threads={threads} \
                       --platform=hifi \
                       --sample_name={wildcards.sample} \
-                      --model_path=/opt/models/{params.model} \
+                      --model_path=asset/models/{params.model} \
                       --include_all_ctgs \
                       --min_contig_size=40000000 \
                       --remove_intermediate_dir \
