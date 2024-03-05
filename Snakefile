@@ -18,7 +18,7 @@ def load_metadata_table():
 
         targets.append(f'sniffles2/{row["SampleID"]}.{row["Technology"]}.snf')
 
-    return targets[:4]+targets[-4:]
+    return targets
 
 rule all:
     input:
@@ -92,8 +92,8 @@ rule clair3:
         _dir = lambda wildcards, output: PurePath(output[0]).parent
     threads: 12
     resources:
-        mem_mb = 3000,
-        walltime = '24h'
+        mem_mb = 5000,
+        walltime = lambda wildcards: '24h' if wildcards.read == 'PB' else '48h'
     conda: 'clair3'
     shell:
         '''
