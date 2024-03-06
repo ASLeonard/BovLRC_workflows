@@ -93,7 +93,8 @@ rule clair3:
     threads: 12
     resources:
         mem_mb = 5000,
-        walltime = lambda wildcards: '24h' if wildcards.read == 'PB' else '48h'
+        walltime = lambda wildcards: '24h' if wildcards.read == 'PB' else '48h',
+        scratch = '200G'
     conda: 'clair3'
     shell:
         '''
