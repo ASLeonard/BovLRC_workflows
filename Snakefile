@@ -92,8 +92,8 @@ rule clair3:
         _dir = lambda wildcards, output: PurePath(output[0]).parent
     threads: 12
     resources:
-        mem_mb = 5000,
-        walltime = lambda wildcards: '24h' if wildcards.read == 'PB' else '48h',
+        mem_mb = 6000,
+        walltime = lambda wildcards: '24h' if wildcards.read == 'PB' else '72h',
         scratch = '200G'
     conda: 'clair3'
     shell:
@@ -106,6 +106,38 @@ rule clair3:
                       --model_path=asset/models/{params.model} \
                       --include_all_ctgs \
                       --min_contig_size=40000000 \
+                      --remove_intermediate_dir \
+                      --gvcf \
+                      --output={params._dir}
+        '''
+
+rule clair3_by_contig:
+    input:
+        reference = 'asset/genome_compact/ARS_UCD_v2.0.fa.gz',
+        bam = rules.minimap2_align.output
+    output:
+        temp(expand('clair3/{{sample}}_{{read}}_{{contig}}/{out}.vcf.gz{ext}',out=('full_alignment','merge_output','pileup'),ext=('','.tbi'))),
+        temp(directory('clair3/{sample}_{read}_{contig}/log')),
+        temp('clair3/{sample}_{read}_{contig}/run_clair3.log'),
+        multiext('clair3/{sample}_{read}_{contig}/merge_output.gvcf.gz','','.tbi')
+    params:
+        model = lambda wildcards: {'Sequel':'hifi_sequel2','Revio':'hifi_revio','r9_g3':'r941_prom_hac_g360+g422','r9_g4':'r941_prom_hac_g360+g422'}[df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Kit').item()],
+        _dir = lambda wildcards, output: PurePath(output[0]).parent
+    threads: 6
+    resources:
+        mem_mb = 5000,
+        walltime = lambda wildcards: '24h' if wildcards.read == 'PB' else '24h',
+        scratch = '20G'
+    conda: 'clair3'
+    shell:
+        '''
+        run_clair3.sh --bam_fn={input.bam[0]} \
+                      --ref_fn={input.reference} \
+                      --threads={threads} \
+                      --ctg_name={wildcards.contig} \
+                      --platform=hifi \
+                      --sample_name={wildcards.sample} \
+                      --model_path=asset/models/{params.model} \
                       --remove_intermediate_dir \
                       --gvcf \
                       --output={params._dir}
