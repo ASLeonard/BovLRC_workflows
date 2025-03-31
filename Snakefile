@@ -1,6 +1,3 @@
-from pathlib import PurePath
-import polars as pl
-
 #workflow._singularity_args += f' -B /nfs/nas12.ethz.ch/fs1201/green_groups_tg_public/data -B $TMPDIR -B /cluster/work/pausch/inputs -B /cluster/spack/apps/'
 
 minimap2_presets = {'PB':'map-hifi','ONT':'map-ont'}
@@ -33,7 +30,7 @@ rule minimap2_index:
         preset = lambda wildcards: minimap2_presets[wildcards.read]
     threads: 1
     resources:
-        mem_mb = 25000
+        mem_mb_per_cpu = 25000
     shell:
         '''
         minimap2 -x {params.preset} -d {output} {input}
@@ -50,12 +47,11 @@ rule minimap2_align:
     params:
         preset = lambda wildcards: minimap2_presets[wildcards.read],
         decoding_reference = lambda wildcards: df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Reference').item(),
-        cram_fmt = lambda wildcards, input, output: f'--reference {input.reference} --output-fmt cram,version=3.1' if PurePath(output[0]).suffix == '.cram' else ''
+        cram_fmt = lambda wildcards, input, output: f'--reference {input.reference} --output-fmt cram,version=3.1' if Path(output[0]).suffix == '.cram' else ''
     threads: lambda wildcards: 16
     resources:
-        mem_mb = lambda wildcards: 5000 if wildcards.read == 'PB' else 7000,
-        walltime = '24h',
-        scratch = '50G'
+        mem_mb_per_cpu = lambda wildcards: 5000 if wildcards.read == 'PB' else 7000,
+        runtime = '24h'
     shell:
         '''
         samtools fastq --reference {params.decoding_reference} --threads {threads} {input.bam} |\
@@ -71,8 +67,8 @@ rule cramino_stats:
         'alignments/{sample}.{read}.mm2.stats'
     threads: 4
     resources:
-        mem_mb = 2500,
-        walltime = '4h'
+        mem_mb_per_cpu = 2500,
+        runtime = '4h'
     shell:
         '''
         cramino --reference {input.reference} -t {threads} -s {wildcards.sample}_{wildcards.read} {input.bam[0]} > {output}
@@ -89,12 +85,11 @@ rule clair3:
         multiext('clair3/{sample}_{read}/merge_output.gvcf.gz','','.tbi')
     params:
         model = lambda wildcards: {'Sequel':'hifi_sequel2','Revio':'hifi_revio','r9_g3':'r941_prom_hac_g360+g422','r9_g4':'r941_prom_hac_g360+g422'}[df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Kit').item()],
-        _dir = lambda wildcards, output: PurePath(output[0]).parent
+        _dir = lambda wildcards, output: Path(output[0]).parent
     threads: 12
     resources:
-        mem_mb = 6000,
-        walltime = lambda wildcards: '24h' if wildcards.read == 'PB' else '72h',
-        scratch = '200G'
+        mem_mb_per_cpu = 6000,
+        runtime = lambda wildcards: '24h' if wildcards.read == 'PB' else '72h'
     conda: 'clair3'
     shell:
         '''
@@ -122,12 +117,11 @@ rule clair3_by_contig:
         multiext('clair3/{sample}_{read}_{contig}/merge_output.gvcf.gz','','.tbi')
     params:
         model = lambda wildcards: {'Sequel':'hifi_sequel2','Revio':'hifi_revio','r9_g3':'r941_prom_hac_g360+g422','r9_g4':'r941_prom_hac_g360+g422'}[df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Kit').item()],
-        _dir = lambda wildcards, output: PurePath(output[0]).parent
+        _dir = lambda wildcards, output: Path(output[0]).parent
     threads: 6
     resources:
-        mem_mb = 5000,
-        walltime = lambda wildcards: '24h' if wildcards.read == 'PB' else '24h',
-        scratch = '20G'
+        mem_mb_per_cpu = 5000,
+        runtime = lambda wildcards: '24h' if wildcards.read == 'PB' else '24h'
     conda: 'clair3'
     shell:
         '''
@@ -152,8 +146,8 @@ rule sniffles2:
         snf = 'sniffles2/{sample}.{read}.snf'
     threads: 4
     resources:
-        mem_mb = 3750
-    conda: 'sniffles'
+        mem_mb_per_cpu = 3750
+    conda: 'sniffles_BovLRC'
     shell:
         '''
         sniffles --input {input.bam[0]} \
