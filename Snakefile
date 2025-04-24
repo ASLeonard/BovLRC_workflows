@@ -1,19 +1,17 @@
-#workflow._singularity_args += f' -B /nfs/nas12.ethz.ch/fs1201/green_groups_tg_public/data -B $TMPDIR -B /cluster/work/pausch/inputs -B /cluster/spack/apps/'
+import polars as pl
 
-minimap2_presets = {'PB':'map-hifi','ONT':'map-ont'}
+def get_minimap2_preset(wildcards):
+    return {'PB':'map-hifi','ONT':'map-ont'}[wildcards.read]
 
 df = pl.read_csv('long_read_metadata.csv')
 
 def load_metadata_table():
     targets = []
-    for row in df.to_dicts():
+    for ID, row in df.rows_by_key('SampleID',named=True,unique=True).items():
 
-        targets.append(f'alignments/{row["SampleID"]}.{row["Technology"]}.mm2.stats')
-
-        targets.append(f'clair3/{row["SampleID"]}_{row["Technology"]}/merge_output.gvcf.gz')
-        targets.append(f'clair3/{row["SampleID"]}_{row["Technology"]}/merge_output.gvcf.gz.tbi')
-
-        targets.append(f'sniffles2/{row["SampleID"]}.{row["Technology"]}.snf')
+        targets.extend([f'alignments/{ID}.{row["Technology"]}.mm2.stats',
+                        f'clair3/{ID}_{row["Technology"]}/merge_output.gvcf.gz',
+                        f'sniffles2/{ID}.{row["Technology"]}.snf'])
 
     return targets
 
@@ -25,27 +23,27 @@ rule minimap2_index:
     input:
         reference = 'asset/genome_compact/ARS_UCD_v2.0.fa.gz'
     output:
-        'asset/genome_compact/ARS_UCD_v2.0.{read}.mmi'
+        index = 'asset/genome_compact/ARS_UCD_v2.0.{read}.mmi'
     params:
-        preset = lambda wildcards: minimap2_presets[wildcards.read]
+        preset = get_minimap2_preset
     threads: 1
     resources:
         mem_mb_per_cpu = 25000
     shell:
         '''
-        minimap2 -x {params.preset} -d {output} {input}
+        minimap2 -x {params.preset} -d {output.index} {input.reference}
         '''
 
 rule minimap2_align:
     input:
         reference = 'asset/genome_compact/ARS_UCD_v2.0.fa.gz',
         bam = lambda wildcards: df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('FASTQ_LR_Dir').item(),
-        index = rules.minimap2_index.output
+        index = rules.minimap2_index.output['index']
     output:
-        #multiext('alignments/{sample}.{read}.mm2.bam','','.csi')
-        multiext('alignments/{sample}.{read}.mm2.cram','','.crai')
+        multiext('alignments/{sample}.{read}.mm2.bam','','.csi')
+        #multiext('alignments/{sample}.{read}.mm2.cram','','.crai')
     params:
-        preset = lambda wildcards: minimap2_presets[wildcards.read],
+        preset = get_minimap2_preset,
         decoding_reference = lambda wildcards: df.filter((pl.col('SampleID')==wildcards.sample)&(pl.col('Technology')==wildcards.read)).select('Reference').item(),
         cram_fmt = lambda wildcards, input, output: f'--reference {input.reference} --output-fmt cram,version=3.1' if Path(output[0]).suffix == '.cram' else ''
     threads: lambda wildcards: 16
